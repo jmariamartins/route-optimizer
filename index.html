@@ -590,7 +590,7 @@ function initMap() {
   map = L.map('map', { preferCanvas: true }).setView([35.68, 139.69], 12);
 
   const stadiaKey = getKeys().stadia;
-  const tileUrl = stadiaKey
+  const tileUrl = MapTiler API Key
   ? `https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=${stadiaKey}`
   : 'https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png';
 
