@@ -1,0 +1,1360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Route Optimizer</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: #f1f5f9;
+      color: #1e293b;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Header ── */
+    .header {
+      background: #0f172a;
+      color: white;
+      padding: 0 20px;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      border-bottom: 1px solid #1e293b;
+    }
+    .header-title { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; display: flex; align-items: center; gap: 8px; }
+    .header-actions { display: flex; gap: 8px; }
+
+    /* ── Layout ── */
+    .main { display: flex; flex: 1; overflow: hidden; }
+@media (max-width: 768px) {
+  .main { flex-direction: column; }
+  .sidebar {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    width: 100%;
+    height: 70vh;
+    max-height: 70vh;
+    border-right: none;
+    border-top: 2px solid #e2e8f0;
+    border-radius: 16px 16px 0 0;
+    z-index: 1000;
+    transform: translateY(100%);
+    transition: transform 0.3s ease;
+    overflow-y: auto;
+    box-shadow: 0 -4px 20px rgba(0,0,0,0.15);
+  }
+  .sidebar.mobile-open {
+    transform: translateY(0);
+    display: flex;
+  }
+  .content { order: 1; min-height: 0; flex: 1; }
+  #map { min-height: 45vh; }
+  .divider-handle { display: none; }
+  .route-panel {
+    height: auto !important;
+    max-height: 45vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  .route-cards { flex-direction: column; height: auto; overflow: visible; }
+  .route-card { min-width: 100%; max-width: 100%; height: auto; }
+  .route-card-body { overflow: visible; max-height: none; }
+  .mobile-menu-btn { display: flex !important; }
+}
+
+    .sidebar {
+      width: 320px;
+      background: white;
+      border-right: 1px solid #e2e8f0;
+      overflow-y: auto;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .sidebar-inner { padding: 14px; display: flex; flex-direction: column; gap: 14px; }
+
+    .content { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+
+    /* ── Map ── */
+    #map { flex: 1; min-height: 100px; }
+
+    /* ── Draggable divider ── */
+    .divider-handle {
+      height: 8px; background: #e2e8f0; cursor: ns-resize;
+      flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+      transition: background 0.15s;
+    }
+    .divider-handle:hover, .divider-handle.dragging { background: #94a3b8; }
+    .divider-handle-grip {
+      width: 40px; height: 3px; background: #94a3b8; border-radius: 2px;
+      pointer-events: none;
+    }
+    .divider-handle:hover .divider-handle-grip,
+    .divider-handle.dragging .divider-handle-grip { background: white; }
+
+    /* ── Route panel ── */
+    .route-panel {
+      height: 340px;
+      min-height: 80px;
+      overflow: hidden;
+      background: white;
+      padding: 10px 12px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    #route-cards-container {
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .route-cards {
+      display: flex;
+      gap: 10px;
+      flex: 1;
+      min-height: 0;
+      overflow-x: auto;
+      overflow-y: hidden;
+      align-items: stretch;
+    }
+    .route-card {
+      min-width: 240px;
+      max-width: 240px;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      overflow: hidden;
+      min-height: 0;
+    }
+    .route-card-color-bar { height: 4px; flex-shrink: 0; }
+    .route-card-header { padding: 8px 10px 6px; flex-shrink: 0; border-bottom: 1px solid #f1f5f9; }
+    .route-card-title { font-size: 13px; font-weight: 700; }
+    .route-card-meta { font-size: 11px; color: #64748b; margin-top: 1px; }
+    .route-card-body {
+      padding: 6px 10px;
+      overflow-y: auto;
+      flex: 1;
+      min-height: 0;
+      scrollbar-width: thin;
+      scrollbar-color: #cbd5e1 transparent;
+    }
+    .route-card-body::-webkit-scrollbar { width: 5px; }
+    .route-card-body::-webkit-scrollbar-track { background: transparent; }
+    .route-card-body::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+    .route-card-body::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    .hotel-stop { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: #1d4ed8; padding: 3px 0; }
+    .route-stop { display: flex; align-items: flex-start; gap: 6px; margin-bottom: 2px; }
+    .stop-number {
+      width: 18px; height: 18px; border-radius: 50%; color: white;
+      font-size: 9px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px;
+    }
+    .stop-name { font-size: 11px; font-weight: 600; line-height: 1.3; }
+    .stop-meta { font-size: 10px; color: #94a3b8; }
+    .leg {
+      display: flex; align-items: center; gap: 4px;
+      padding: 2px 0 2px 24px; font-size: 10px; color: #94a3b8;
+      cursor: pointer; border-radius: 3px;
+    }
+    .leg:hover { background: #f8fafc; }
+    .leg.transport { text-decoration: line-through; opacity: 0.45; }
+    .empty-panel { display: flex; align-items: center; justify-content: center; height: 100%; }
+    .empty-text { font-size: 12px; color: #94a3b8; }
+
+    /* ── Sidebar sections ── */
+    .section-title {
+      font-size: 10px; font-weight: 700; color: #94a3b8;
+      text-transform: uppercase; letter-spacing: 0.08em;
+      margin-bottom: 8px;
+    }
+    .divider { border: none; border-top: 1px solid #f1f5f9; }
+
+    /* ── Tabs ── */
+    .tabs { display: flex; border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden; }
+    .tab {
+      flex: 1; padding: 6px 8px; font-size: 12px; border: none;
+      background: white; cursor: pointer; color: #64748b;
+      transition: background 0.15s, color 0.15s;
+    }
+    .tab.active { background: #0f172a; color: white; font-weight: 500; }
+
+    /* ── Form elements ── */
+    label { font-size: 11px; font-weight: 500; color: #64748b; display: block; margin-bottom: 3px; }
+
+    input[type="text"],
+    input[type="number"],
+    select {
+      width: 100%; padding: 7px 9px;
+      border: 1px solid #e2e8f0; border-radius: 6px;
+      font-size: 12px; color: #1e293b; background: white; outline: none;
+      transition: border-color 0.15s;
+    }
+    input[type="text"]:focus, input[type="number"]:focus, select:focus { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.1); }
+
+    input[type="file"] {
+      width: 100%; font-size: 11px; color: #64748b;
+      border: 1px dashed #e2e8f0; border-radius: 6px;
+      padding: 8px; cursor: pointer; background: #fafafa;
+    }
+    input[type="file"]:hover { border-color: #94a3b8; }
+
+    /* ── Buttons ── */
+    .btn {
+      padding: 7px 12px; border-radius: 6px; font-size: 12px; font-weight: 500;
+      border: none; cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+      transition: all 0.15s; white-space: nowrap;
+    }
+    .btn-primary { background: #0f172a; color: white; width: 100%; }
+    .btn-primary:hover:not(:disabled) { background: #1e293b; }
+    .btn-primary:disabled { background: #94a3b8; cursor: not-allowed; }
+    .btn-outline { background: white; color: #1e293b; border: 1px solid #e2e8f0; width: 100%; }
+    .btn-outline:hover:not(:disabled) { background: #f8fafc; }
+    .btn-outline:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-ghost { background: transparent; color: #64748b; border: none; padding: 3px 6px; font-size: 11px; }
+    .btn-ghost:hover { background: #f1f5f9; color: #1e293b; }
+    .btn-sm { padding: 5px 9px; font-size: 11px; }
+    .btn-icon { padding: 4px 6px; }
+
+    /* ── Search ── */
+    .search-wrapper { position: relative; }
+    .search-results {
+      position: absolute; z-index: 9999; background: white;
+      border: 1px solid #e2e8f0; border-radius: 6px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+      width: 100%; top: calc(100% + 4px); left: 0;
+      max-height: 180px; overflow-y: auto;
+    }
+    .search-result-item {
+      padding: 7px 10px; font-size: 11px; cursor: pointer;
+      color: #1e293b; border-bottom: 1px solid #f8fafc;
+    }
+    .search-result-item:last-child { border-bottom: none; }
+    .search-result-item:hover { background: #f1f5f9; }
+
+    /* ── Points list ── */
+    .points-list { max-height: 160px; overflow-y: auto; }
+    .point-item {
+      display: flex; align-items: center; gap: 6px;
+      padding: 5px 0; border-bottom: 1px solid #f8fafc;
+    }
+    .point-item:last-child { border-bottom: none; }
+    .point-badge {
+      font-size: 9px; font-weight: 600; padding: 1px 5px;
+      border-radius: 3px; background: #f1f5f9; color: #64748b;
+      flex-shrink: 0; text-transform: uppercase;
+    }
+    .point-name { flex: 1; font-size: 11px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .point-cat { font-size: 10px; color: #94a3b8; }
+
+    /* ── Pending map click ── */
+    .pending-click {
+      background: #eff6ff; border: 1px solid #bfdbfe;
+      border-radius: 6px; padding: 8px; margin-top: 6px;
+    }
+    .pending-click-label { font-size: 11px; color: #1d4ed8; font-weight: 600; margin-bottom: 4px; }
+    .pending-click-coords { font-size: 10px; color: #3b82f6; margin-bottom: 6px; }
+    .pending-click-row { display: flex; flex-direction: column; gap: 6px; }
+	.pending-click-row input { width: 100%; }
+	.pending-click-row .btn-row { display: flex; gap: 6px; }
+
+    /* ── Warning ── */
+    .warning-bar {
+      background: #fffbeb; border-bottom: 1px solid #fcd34d;
+      padding: 8px 14px; font-size: 11px; color: #92400e;
+      flex-shrink: 0;
+    }
+
+    /* ── Modal ── */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+      z-index: 5000; display: flex; align-items: center; justify-content: center;
+    }
+    .modal {
+      background: white; border-radius: 10px; padding: 20px;
+      width: 340px; box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+    }
+    .modal h2 { font-size: 15px; font-weight: 700; margin-bottom: 14px; }
+    .modal-field { margin-bottom: 10px; }
+    .modal-actions { display: flex; gap: 8px; margin-top: 14px; }
+    .modal-actions .btn { flex: 1; }
+
+    /* ── Toast ── */
+    .toast {
+      position: fixed; bottom: 18px; right: 18px;
+      padding: 9px 14px; border-radius: 7px;
+      font-size: 12px; font-weight: 500; color: white;
+      z-index: 9999; box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+      animation: toastIn 0.2s ease;
+    }
+    @keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+    /* ── Spinner ── */
+    .spinner {
+      width: 12px; height: 12px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: white; border-radius: 50%;
+      animation: spin 0.7s linear infinite; flex-shrink: 0;
+    }
+    .spinner-dark { border-color: rgba(0,0,0,0.1); border-top-color: #0f172a; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .hidden { display: none !important; }
+    .mt-1 { margin-top: 4px; }
+    .mt-2 { margin-top: 8px; }
+    .flex { display: flex; }
+    .gap-2 { gap: 8px; }
+    .flex-1 { flex: 1; }
+
+    /* ── Print / PDF styles ── */
+    @media print {
+      * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+      body { height: auto; overflow: visible; background: white; font-family: Arial, sans-serif; }
+      .header { display: none; }
+      .main { flex-direction: column; overflow: visible; height: auto; }
+      .sidebar { display: none; }
+      .content { overflow: visible; height: auto; }
+      #map { display: none; }
+      .divider-handle { display: none; }
+      #fallback-warning { display: none; }
+      .route-panel {
+        height: auto !important; min-height: 0 !important;
+        overflow: visible !important;
+        border: none; padding: 0;
+      }
+      .route-cards { flex-wrap: wrap; height: auto; gap: 16px; }
+      .route-card {
+        min-width: 46%; max-width: 48%; height: auto !important;
+        break-inside: avoid; overflow: visible;
+        margin-bottom: 16px; border: 1px solid #d1d5db;
+      }
+      .route-card-body {
+        overflow: visible !important; max-height: none !important;
+        min-height: 0 !important;
+      }
+      #print-map-svg { display: block !important; margin-bottom: 20px; }
+      .print-title { display: block !important; font-size: 18px; font-weight: 700; margin-bottom: 2px; color: #0f172a; }
+      .print-subtitle { display: block !important; font-size: 11px; color: #64748b; margin-bottom: 16px; }
+      .leg { cursor: default; }
+      .empty-panel { display: none; }
+    }
+    #print-map-svg { display: none; }
+    .print-title { display: none; }
+    .print-subtitle { display: none; }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-title">
+  <span>🗺</span> Route Optimizer
+</div>
+<button class="mobile-menu-btn btn btn-ghost" onclick="toggleMobileSidebar()" style="display:none;color:#94a3b8;font-size:12px;">☰ Settings</button>
+  <div class="header-actions">
+    <button class="btn btn-ghost" id="pdf-btn" onclick="exportPDF()" style="color:#94a3b8;font-size:12px;" disabled>🖨 Export PDF</button>
+    <button class="btn btn-ghost" onclick="openSettings()" style="color:#94a3b8;font-size:12px;">⚙ API Keys</button>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-inner">
+
+      <!-- 1. Add Points -->
+      <div>
+        <div class="section-title">1. Add Points</div>
+        <div class="tabs">
+          <button class="tab active" id="tab-kml" onclick="switchTab('kml')">Import KML</button>
+          <button class="tab" id="tab-manual" onclick="switchTab('manual')">Add Manually</button>
+        </div>
+
+        <!-- KML -->
+        <div id="panel-kml" class="mt-2">
+          <input type="file" accept=".kml" onchange="handleKMLUpload(event)" />
+          <p style="font-size:10px;color:#94a3b8;margin-top:5px;">Export from Google My Maps → Download KML</p>
+        </div>
+
+        <!-- Manual -->
+        <div id="panel-manual" class="hidden mt-2">
+          <div class="search-wrapper">
+            <input type="text" id="search-input" placeholder="Search a place (e.g. Senso-ji Tokyo)…" oninput="handleSearchInput(this.value)" />
+            <div class="search-results hidden" id="search-results"></div>
+          </div>
+          <p style="font-size:10px;color:#94a3b8;margin-top:5px;">Or click anywhere on the map to drop a pin.</p>
+          <div id="pending-click-panel"></div>
+        </div>
+
+        <!-- Points list -->
+        <div id="points-list" class="points-list mt-2"></div>
+      </div>
+
+      <hr class="divider" />
+
+      <!-- 2. Hotel -->
+      <div>
+        <div class="section-title">2. Hotel / Base</div>
+        <select id="hotel-select" onchange="handleHotelSelect(this.value)">
+          <option value="">Select your hotel or base…</option>
+        </select>
+      </div>
+
+      <hr class="divider" />
+
+      <!-- 3. Settings -->
+      <div>
+        <div class="section-title">3. Route Settings</div>
+        <div class="flex gap-2">
+          <div class="flex-1">
+            <label>Days / Groups</label>
+            <input type="number" id="num-groups" value="2" min="1" max="10" />
+          </div>
+          <div class="flex-1">
+            <label>Speed (km/h)</label>
+            <input type="number" id="walking-speed" value="5" min="1" max="10" />
+          </div>
+        </div>
+      </div>
+
+      <hr class="divider" />
+
+      <!-- 4. Generate -->
+      <div>
+        <div class="section-title">4. Generate</div>
+        <button class="btn btn-primary" id="generate-btn" onclick="processRoutes()">
+          Generate Routes
+        </button>
+      </div>
+
+      <hr class="divider" />
+
+      <!-- 5. Gemini -->
+      <div>
+        <div class="section-title">✨ Smart Suggest (Gemini)</div>
+        <input type="text" id="gemini-context" placeholder="Preferences? e.g. focus on temples…" />
+        <button class="btn btn-outline mt-2" id="gemini-btn" onclick="handleGeminiSuggest()">
+          ✨ Smart Suggest
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Content -->
+  <div class="content">
+    <div id="fallback-warning" class="warning-bar hidden"></div>
+    <div id="map"></div>
+    <div class="divider-handle" id="divider-handle" title="Drag to resize">
+      <div class="divider-handle-grip"></div>
+    </div>
+    <div class="route-panel" id="route-panel">
+      <div class="print-title" id="print-title"></div>
+      <div class="print-subtitle" id="print-subtitle"></div>
+      <div id="print-map-svg"></div>
+      <div id="route-cards-container">
+        <div class="empty-panel">
+          <span class="empty-text">Generate routes to see the summary here.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Settings Modal -->
+<div class="modal-overlay hidden" id="settings-modal" onclick="if(event.target===this)closeSettings()">
+  <div class="modal">
+    <h2>⚙ API Keys</h2>
+    <div class="modal-field">
+      <label>OpenRouteService API Key</label>
+      <input type="text" id="ors-key-input" placeholder="Paste your ORS key here…" />
+      <p style="font-size:10px;color:#94a3b8;margin-top:3px;">Free key at openrouteservice.org → Dashboard → Tokens</p>
+    </div>
+    <div class="modal-field">
+      <label>Gemini API Key</label>
+      <input type="text" id="gemini-key-input" placeholder="Paste your Gemini key here…" />
+      <p style="font-size:10px;color:#94a3b8;margin-top:3px;">Free key at aistudio.google.com/app/apikey</p>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeSettings()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveSettings()">Save Keys</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════
+
+const state = {
+  points: [],
+  hotelPoint: null,
+  groups: [],
+  restTimes: {},
+  transportSegments: {},
+  isGenerating: false,
+  geminiLoading: false,
+  fallbackWarning: null,
+  pendingMapClick: null,
+  activeTab: 'kml',
+};
+
+const ROUTE_COLORS = [
+  '#3b82f6','#ef4444','#10b981','#f59e0b','#8b5cf6',
+  '#ec4899','#14b8a6','#f97316','#6366f1','#84cc16'
+];
+
+// ═══════════════════════════════════════════════════
+// API KEYS  (stored in localStorage)
+// ═══════════════════════════════════════════════════
+
+const getKeys = () => ({
+  ors: localStorage.getItem('ors_api_key') || '',
+  gemini: localStorage.getItem('gemini_api_key') || '',
+});
+
+function openSettings() {
+  const k = getKeys();
+  document.getElementById('ors-key-input').value = k.ors;
+  document.getElementById('gemini-key-input').value = k.gemini;
+  document.getElementById('settings-modal').classList.remove('hidden');
+}
+function closeSettings() {
+  document.getElementById('settings-modal').classList.add('hidden');
+}
+function saveSettings() {
+  const ors = document.getElementById('ors-key-input').value.trim();
+  const gem = document.getElementById('gemini-key-input').value.trim();
+  if (ors) localStorage.setItem('ors_api_key', ors);
+  if (gem) localStorage.setItem('gemini_api_key', gem);
+  closeSettings();
+  showToast('API keys saved ✓', 'success');
+}
+
+// ═══════════════════════════════════════════════════
+// MAP
+// ═══════════════════════════════════════════════════
+
+let map;
+let mapLayers = [];
+
+function initMap() {
+  map = L.map('map', { preferCanvas: true }).setView([35.68, 139.69], 12);
+
+  L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+  maxZoom: 17,
+  subdomains: 'abc',
+  attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+}).addTo(map);
+
+  map.on('click', e => {
+    if (state.activeTab === 'manual') {
+      state.pendingMapClick = { lat: e.latlng.lat, lng: e.latlng.lng };
+      renderPendingClick();
+    }
+  });
+}
+
+function clearMapLayers() {
+  mapLayers.forEach(l => map.removeLayer(l));
+  mapLayers = [];
+}
+
+function renderMap() {
+  clearMapLayers();
+  const bounds = [];
+
+  const hotelIcon = L.divIcon({
+    html: `<div style="background:#1d4ed8;color:#fff;border-radius:6px;padding:3px 7px;font-weight:700;font-size:12px;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.35);">🏨</div>`,
+    className: '', iconSize: [38, 28], iconAnchor: [19, 14],
+  });
+
+  const stopIcon = (n, color) => L.divIcon({
+    html: `<div style="background:${color};color:#fff;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:10px;border:2px solid #fff;box-shadow:0 2px 5px rgba(0,0,0,0.3);">${n}</div>`,
+    className: '', iconSize: [24, 24], iconAnchor: [12, 12],
+  });
+
+  if (state.groups.length > 0 && state.hotelPoint) {
+    const hll = [state.hotelPoint.coordinates[1], state.hotelPoint.coordinates[0]];
+    bounds.push(hll);
+    const hm = L.marker(hll, { icon: hotelIcon, zIndexOffset: 1000 })
+      .bindPopup(`<strong>🏨 ${state.hotelPoint.name}</strong>`).addTo(map);
+    mapLayers.push(hm);
+
+    state.groups.forEach((group, gi) => {
+      const color = ROUTE_COLORS[gi % ROUTE_COLORS.length];
+      const waypoints = [state.hotelPoint, ...group.points, state.hotelPoint];
+
+      group.segments.forEach((seg, si) => {
+        const from = waypoints[si], to = waypoints[si + 1];
+        if (!from || !to) return;
+        const segId = `${from.id}_${to.id}`;
+        const isTransport = !!state.transportSegments[segId];
+        const latLngs = seg.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+        const line = L.polyline(latLngs, {
+          color: isTransport ? '#9ca3af' : color,
+          weight: isTransport ? 3 : 4,
+          opacity: 0.85,
+          dashArray: isTransport ? '8,10' : undefined,
+        }).addTo(map);
+        mapLayers.push(line);
+      });
+
+      group.points.forEach((point, pi) => {
+        const ll = [point.coordinates[1], point.coordinates[0]];
+        bounds.push(ll);
+        const m = L.marker(ll, { icon: stopIcon(pi + 1, color) })
+          .bindPopup(`<strong>Route ${gi + 1} — Stop ${pi + 1}</strong><br>${point.name}`)
+          .addTo(map);
+        mapLayers.push(m);
+      });
+    });
+  } else {
+    state.points.forEach(p => {
+      const ll = [p.coordinates[1], p.coordinates[0]];
+      bounds.push(ll);
+      const isHotel = state.hotelPoint && p.id === state.hotelPoint.id;
+      const m = isHotel
+        ? L.marker(ll, { icon: hotelIcon, zIndexOffset: 1000 }).bindPopup(`<strong>🏨 ${p.name}</strong>`).addTo(map)
+        : L.marker(ll).bindPopup(p.name).addTo(map);
+      mapLayers.push(m);
+    });
+  }
+
+  if (bounds.length > 0) {
+    setTimeout(() => map && map.fitBounds(bounds, { padding: [40, 40] }), 120);
+  }
+}
+
+// ═══════════════════════════════════════════════════
+// KML PARSER
+// ═══════════════════════════════════════════════════
+
+function parseKML(text) {
+  const parser = new DOMParser();
+  const xml = parser.parseFromString(text, 'text/xml');
+  if (xml.getElementsByTagName('parsererror').length) throw new Error('Invalid KML file.');
+  const placemarks = Array.from(xml.getElementsByTagName('Placemark'));
+  let ctr = 0;
+  return placemarks.map(p => {
+    const name = p.getElementsByTagName('name')[0]?.textContent?.trim() || 'Unnamed';
+    const desc = p.getElementsByTagName('description')[0]?.textContent?.trim() || '';
+    const coordStr = p.getElementsByTagName('coordinates')[0]?.textContent?.trim();
+    if (!coordStr) return null;
+    const parts = coordStr.split(',').map(Number);
+    if (parts.length < 2 || isNaN(parts[0]) || isNaN(parts[1])) return null;
+    ctr++;
+    return {
+      id: `kml-${Date.now()}-${ctr}`,
+      name, description: desc,
+      coordinates: [parts[0], parts[1], parts[2] || 0],
+      isHotel: /hotel/i.test(name),
+      restTime: 10,
+      source: 'kml',
+      category: detectCategory(name, desc),
+    };
+  }).filter(Boolean);
+}
+
+function detectCategory(name, desc = '') {
+  const t = `${name} ${desc}`.toLowerCase();
+  if (/restaurant|ristorante|food|cafe|dining|bistro|trattoria/i.test(t)) return 'Restaurant';
+  if (/bar|pub|lounge|brewery/i.test(t)) return 'Bar';
+  if (/shop|store|market|boutique|mall/i.test(t)) return 'Shopping';
+  if (/museum|gallery|art|exhibition/i.test(t)) return 'Museum';
+  if (/temple|shrine|church|cathedral|mosque|synagogue/i.test(t)) return 'Temple/Shrine';
+  if (/park|garden|nature|beach/i.test(t)) return 'Nature';
+  if (/monument|statue|memorial|historic/i.test(t)) return 'Monument';
+  if (/photo|view|lookout|panorama|viewpoint/i.test(t)) return 'Viewpoint';
+  return 'Attraction';
+}
+
+// ═══════════════════════════════════════════════════
+// ORS SERVICE
+// ═══════════════════════════════════════════════════
+
+const ORS_BASE = 'https://api.openrouteservice.org';
+
+async function fetchDistanceMatrix(points) {
+  const key = getKeys().ors;
+  if (!key) throw new Error('No ORS API key set. Click ⚙ API Keys to add it.');
+  if (points.length > 22) throw new Error(`Too many points (${points.length}). Max 22 for free tier.`);
+  const locations = points.map(p => [p.coordinates[0], p.coordinates[1]]);
+  const res = await fetch(`${ORS_BASE}/v2/matrix/foot-walking`, {
+    method: 'POST',
+    headers: { Authorization: key, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ locations, metrics: ['distance', 'duration'] }),
+  });
+  if (res.status === 429) throw new Error('ORS daily quota reached. Try again tomorrow.');
+  if (!res.ok) throw new Error(`ORS Matrix error ${res.status}: ${await res.text()}`);
+  const d = await res.json();
+  return { durations: d.durations, distances: d.distances };
+}
+
+async function fetchWalkingRoute(waypoints) {
+  const key = getKeys().ors;
+  if (!key) throw new Error('No ORS API key set.');
+  if (waypoints.length < 2) return [];
+  const coordinates = waypoints.map(p => [p.coordinates[0], p.coordinates[1]]);
+  const res = await fetch(`${ORS_BASE}/v2/directions/foot-walking/geojson`, {
+    method: 'POST',
+    headers: { Authorization: key, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ coordinates }),
+  });
+  if (res.status === 429) throw new Error('ORS daily directions quota reached.');
+  if (!res.ok) throw new Error(`ORS Directions error ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  const feature = data.features?.[0];
+  if (!feature) throw new Error('ORS returned no route geometry.');
+  const fullCoords = feature.geometry.coordinates;
+  return feature.properties.segments.map(seg => {
+    const s = seg.steps[0].way_points[0];
+    const e = seg.steps[seg.steps.length - 1].way_points[1];
+    return {
+      distance: seg.distance,
+      duration: seg.duration,
+      geometry: { type: 'LineString', coordinates: fullCoords.slice(s, e + 1) },
+    };
+  });
+}
+
+function makeStraightLine(from, to) {
+  const dx = to.coordinates[0] - from.coordinates[0];
+  const dy = to.coordinates[1] - from.coordinates[1];
+  const dist = Math.sqrt(dx * dx + dy * dy) * 111320;
+  return {
+    distance: dist, duration: dist / 83.3,
+    geometry: {
+      type: 'LineString',
+      coordinates: [[from.coordinates[0], from.coordinates[1]], [to.coordinates[0], to.coordinates[1]]],
+    },
+  };
+}
+
+// ═══════════════════════════════════════════════════
+// ROUTE OPTIMIZER
+// ═══════════════════════════════════════════════════
+
+function haversine(a, b) {
+  const R = 6371, d2r = Math.PI / 180;
+  const dLat = (b[1] - a[1]) * d2r, dLon = (b[0] - a[0]) * d2r;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a[1] * d2r) * Math.cos(b[1] * d2r) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
+function clusterByMatrix(points, numGroups, matrix, allPoints) {
+  if (numGroups >= points.length) return points.map(p => [p]);
+  const idx = new Map(allPoints.map((p, i) => [p.id, i]));
+  const dist = (a, b) => {
+    const ai = idx.get(a.id), bi = idx.get(b.id);
+    return (ai === undefined || bi === undefined) ? Infinity : matrix.distances[ai][bi] / 1000;
+  };
+  const rem = [...points].sort((a, b) => matrix.distances[idx.get(b.id)][0] - matrix.distances[idx.get(a.id)][0]);
+  const seeds = [rem.shift()];
+  while (seeds.length < numGroups && rem.length > 0) {
+    const next = rem.reduce((best, c) => {
+      const dc = Math.min(...seeds.map(s => dist(c, s)));
+      const db = Math.min(...seeds.map(s => dist(best, s)));
+      return dc > db ? c : best;
+    });
+    seeds.push(next);
+    rem.splice(rem.indexOf(next), 1);
+  }
+  const clusters = seeds.map(() => []);
+  for (const p of points) {
+    let ni = 0, nd = Infinity;
+    seeds.forEach((s, i) => { const d = dist(p, s); if (d < nd) { nd = d; ni = i; } });
+    clusters[ni].push(p);
+  }
+  return clusters.filter(c => c.length > 0);
+}
+
+function tspOrder(cluster, hotel, matrix, allPoints) {
+  if (cluster.length <= 1) return cluster;
+  const idx = new Map(allPoints.map((p, i) => [p.id, i]));
+  const dist = (a, b) => {
+    const ai = idx.get(a.id), bi = idx.get(b.id);
+    return (ai === undefined || bi === undefined) ? Infinity : matrix.distances[ai][bi];
+  };
+  let cur = cluster.reduce((best, p) => dist(hotel, p) < dist(hotel, best) ? p : best);
+  const unvisited = new Set(cluster.filter(p => p.id !== cur.id));
+  const route = [cur];
+  while (unvisited.size > 0) {
+    let nearest = null, nd = Infinity;
+    unvisited.forEach(p => { const d = dist(cur, p); if (d < nd) { nd = d; nearest = p; } });
+    if (!nearest) break;
+    route.push(nearest); unvisited.delete(nearest); cur = nearest;
+  }
+  return route;
+}
+
+function fallbackCluster(points, numGroups, hotel) {
+  if (numGroups >= points.length) return points.map(p => [p]);
+  const hl = hotel.coordinates[0], hlat = hotel.coordinates[1];
+  const buckets = Array.from({ length: Math.min(numGroups, 4) }, () => []);
+  points.forEach(p => {
+    const isE = p.coordinates[0] >= hl, isN = p.coordinates[1] >= hlat;
+    let b = 0;
+    if (numGroups === 2) b = isE ? 0 : 1;
+    else if (numGroups === 3) b = isN ? (isE ? 0 : 1) : 2;
+    else b = (isN ? 0 : 2) + (isE ? 0 : 1);
+    buckets[Math.min(b, buckets.length - 1)].push(p);
+  });
+  return buckets.filter(b => b.length > 0);
+}
+
+async function optimizeRoutes(points, hotel, numGroups, restTimes) {
+  const nonHotel = points.filter(p => p.id !== hotel.id);
+  if (!nonHotel.length) return { groups: [], usedFallback: false };
+  const allForMatrix = [hotel, ...nonHotel];
+  let matrix = null, usedFallback = false, fallbackReason;
+  try {
+    matrix = await fetchDistanceMatrix(allForMatrix);
+  } catch (err) {
+    usedFallback = true; fallbackReason = err.message;
+  }
+  let clusters = matrix
+    ? clusterByMatrix(nonHotel, numGroups, matrix, allForMatrix).map(c => tspOrder(c, hotel, matrix, allForMatrix))
+    : fallbackCluster(nonHotel, numGroups, hotel);
+
+  const groups = await Promise.all(clusters.map(async cluster => {
+    const waypoints = [hotel, ...cluster, hotel];
+    let segments;
+    try {
+      segments = await fetchWalkingRoute(waypoints);
+    } catch (err) {
+      usedFallback = true; fallbackReason = err.message;
+      segments = waypoints.slice(0, -1).map((p, i) => makeStraightLine(p, waypoints[i + 1]));
+    }
+    const totalDist = segments.reduce((s, seg) => s + seg.distance / 1000, 0);
+    const totalRest = cluster.reduce((s, p) => s + (restTimes[p.id] ?? p.restTime ?? 5), 0);
+    return { points: cluster, distance: totalDist, walkingDistance: totalDist, restTime: totalRest, segments };
+  }));
+
+  return { groups, usedFallback, fallbackReason };
+}
+
+function recalcWalking(group, hotel) {
+  const all = [hotel, ...group.points, hotel];
+  return all.slice(0, -1).reduce((km, p, i) => {
+    const segId = `${p.id}_${all[i + 1].id}`;
+    return km + (state.transportSegments[segId] ? 0 : (group.segments[i]?.distance ?? 0) / 1000);
+  }, 0);
+}
+
+// ═══════════════════════════════════════════════════
+// NOMINATIM
+// ═══════════════════════════════════════════════════
+
+let searchTimeout = null;
+
+async function searchPlaces(query) {
+  const p = new URLSearchParams({ q: query, format: 'json', limit: '5', addressdetails: '0' });
+  const res = await fetch(`https://nominatim.openstreetmap.org/search?${p}`, {
+    headers: { 'User-Agent': 'RouteOptimizerApp/1.0 (personal trip planner)', 'Accept-Language': 'en' },
+  });
+  if (!res.ok) throw new Error('Nominatim error');
+  return res.json();
+}
+
+function handleSearchInput(val) {
+  clearTimeout(searchTimeout);
+  const el = document.getElementById('search-results');
+  if (val.length < 3) { el.classList.add('hidden'); return; }
+  searchTimeout = setTimeout(async () => {
+    try {
+      const results = await searchPlaces(val);
+      if (!results.length) { el.classList.add('hidden'); return; }
+      el.innerHTML = results.map(r =>
+        `<div class="search-result-item" onclick="addFromSearch('${encodeURIComponent(r.display_name)}','${r.lat}','${r.lon}')">${r.display_name}</div>`
+      ).join('');
+      el.classList.remove('hidden');
+    } catch { el.classList.add('hidden'); }
+  }, 600);
+}
+
+function addFromSearch(encodedName, lat, lon) {
+  const fullName = decodeURIComponent(encodedName);
+  const name = fullName.split(',')[0].trim();
+  const point = {
+    id: `search-${Date.now()}`,
+    name, description: fullName,
+    coordinates: [parseFloat(lon), parseFloat(lat), 0],
+    source: 'search', restTime: 10,
+    category: detectCategory(name),
+  };
+  state.points.push(point);
+  state.restTimes[point.id] = 10;
+  document.getElementById('search-input').value = '';
+  document.getElementById('search-results').classList.add('hidden');
+  renderAll();
+}
+
+// ═══════════════════════════════════════════════════
+// GEMINI
+// ═══════════════════════════════════════════════════
+
+async function getGeminiSuggestions(points, numGroups, userContext) {
+  const key = getKeys().gemini;
+  if (!key) throw new Error('No Gemini API key set. Click ⚙ API Keys to add it.');
+  const nonHotel = points.filter(p => !p.isHotel);
+  const list = nonHotel.map(p =>
+    `- ID: "${p.id}" | Name: "${p.name}" | Category: "${p.category || 'unknown'}" | Coords: [${p.coordinates[1].toFixed(4)}, ${p.coordinates[0].toFixed(4)}]`
+  ).join('\n');
+  const prompt = `You are a travel planning assistant. Group the following POIs into ${numGroups} logical walking day-routes (geographically close points together). Estimate rest time per POI in minutes (photo=5-10, monument=10-15, market=20-45, museum=45-90, park=15-30, restaurant=45-60, temple=15-30, attraction=15). Write one short sentence per group (max 20 words).${userContext ? `\nUser preferences: ${userContext}` : ''}
+
+Points:
+${list}
+
+Return ONLY valid JSON:
+{"groups":[["id1","id2"],["id3"]],"restTimes":{"id1":15,"id2":30,"id3":20},"narratives":["Desc 1","Desc 2"]}
+
+Rules: every ID in exactly one group, exactly ${numGroups} groups and narratives, restTimes for every ID.`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { responseMimeType: 'application/json' },
+    }),
+  });
+  if (!res.ok) throw new Error(`Gemini error ${res.status}`);
+  const data = await res.json();
+  const raw = data.candidates?.[0]?.content?.parts?.[0]?.text ?? '{}';
+  const parsed = JSON.parse(raw);
+  if (!Array.isArray(parsed.groups) || !parsed.restTimes || !Array.isArray(parsed.narratives))
+    throw new Error('Gemini returned a malformed response.');
+  return parsed;
+}
+
+// ═══════════════════════════════════════════════════
+// EVENT HANDLERS
+// ═══════════════════════════════════════════════════
+
+function switchTab(tab) {
+  state.activeTab = tab;
+  ['kml','manual'].forEach(t => {
+    document.getElementById(`tab-${t}`).classList.toggle('active', t === tab);
+    document.getElementById(`panel-${t}`).classList.toggle('hidden', t !== tab);
+  });
+}
+
+function handleKMLUpload(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const pts = parseKML(e.target.result);
+      state.points.push(...pts);
+      pts.forEach(p => { state.restTimes[p.id] = p.restTime || 10; });
+      showToast(`Imported ${pts.length} points ✓`, 'success');
+      renderAll();
+    } catch (err) { showToast(err.message, 'error'); }
+  };
+  reader.readAsText(file);
+}
+
+function handleHotelSelect(id) {
+  state.hotelPoint = state.points.find(p => p.id === id) || null;
+  renderMap();
+}
+
+function removePoint(id) {
+  state.points = state.points.filter(p => p.id !== id);
+  if (state.hotelPoint?.id === id) state.hotelPoint = null;
+  state.groups = [];
+  renderAll();
+}
+
+async function processRoutes() {
+  if (!state.hotelPoint) { showToast('Select a hotel/base point first', 'error'); return; }
+  if (state.points.length < 2) { showToast('Add at least 2 points', 'error'); return; }
+  const nonHotelCount = state.points.filter(p => p.id !== state.hotelPoint.id).length;
+  if (nonHotelCount > 22) { showToast(`Max 22 non-hotel points (you have ${nonHotelCount})`, 'error'); return; }
+
+  const numGroups = parseInt(document.getElementById('num-groups').value) || 2;
+  state.isGenerating = true;
+  state.fallbackWarning = null;
+  setGenLoading(true);
+  try {
+    const result = await optimizeRoutes(state.points, state.hotelPoint, numGroups, state.restTimes);
+    state.groups = result.groups;
+    if (result.usedFallback) state.fallbackWarning = result.fallbackReason;
+    else showToast(`${result.groups.length} routes generated ✓`, 'success');
+    document.getElementById('pdf-btn').disabled = false;
+    renderAll();
+  } catch (err) {
+    showToast(err.message, 'error');
+  } finally {
+    state.isGenerating = false;
+    setGenLoading(false);
+  }
+}
+
+async function handleGeminiSuggest() {
+  if (!state.hotelPoint) { showToast('Select a hotel/base point first', 'error'); return; }
+  if (state.points.length < 2) { showToast('Add at least 2 points', 'error'); return; }
+  const numGroups = parseInt(document.getElementById('num-groups').value) || 2;
+  const context = document.getElementById('gemini-context').value;
+  state.geminiLoading = true;
+  state.fallbackWarning = null;
+  setGemLoading(true);
+  try {
+    const suggestion = await getGeminiSuggestions(state.points, numGroups, context);
+    Object.assign(state.restTimes, suggestion.restTimes);
+    const clusters = suggestion.groups
+      .map(ids => ids.map(id => state.points.find(p => p.id === id)).filter(Boolean))
+      .filter(c => c.length > 0);
+    let usedFallback = false, fallbackReason;
+    const newGroups = await Promise.all(clusters.map(async cluster => {
+      const waypoints = [state.hotelPoint, ...cluster, state.hotelPoint];
+      let segments;
+      try { segments = await fetchWalkingRoute(waypoints); }
+      catch (err) {
+        usedFallback = true; fallbackReason = err.message;
+        segments = waypoints.slice(0, -1).map((p, i) => makeStraightLine(p, waypoints[i + 1]));
+      }
+      const totalDist = segments.reduce((s, seg) => s + seg.distance / 1000, 0);
+      const totalRest = cluster.reduce((s, p) => s + (state.restTimes[p.id] ?? 5), 0);
+      return { points: cluster, distance: totalDist, walkingDistance: totalDist, restTime: totalRest, segments };
+    }));
+    state.groups = newGroups;
+    if (usedFallback) state.fallbackWarning = fallbackReason;
+    else showToast('Gemini plan applied ✓', 'success');
+    document.getElementById('pdf-btn').disabled = false;
+    renderAll();
+  } catch (err) {
+    showToast(err.message, 'error');
+  } finally {
+    state.geminiLoading = false;
+    setGemLoading(false);
+  }
+}
+
+function toggleTransport(gi, segId) {
+  state.transportSegments[segId] = !state.transportSegments[segId];
+  if (state.hotelPoint) {
+    state.groups[gi].walkingDistance = recalcWalking(state.groups[gi], state.hotelPoint);
+  }
+  renderMap();
+  renderRouteCards();
+}
+
+// ─── Pending map click ───────────────────────────
+
+function renderPendingClick() {
+  const panel = document.getElementById('pending-click-panel');
+  if (!state.pendingMapClick) { panel.innerHTML = ''; return; }
+  const { lat, lng } = state.pendingMapClick;
+  panel.innerHTML = `
+    <div class="pending-click">
+      <div class="pending-click-label">📍 Pin dropped — give it a name:</div>
+      <div class="pending-click-coords">${lat.toFixed(5)}, ${lng.toFixed(5)}</div>
+      <div class="pending-click-row">
+  <input type="text" id="pending-name" placeholder="Place name…" onkeydown="if(event.key==='Enter')confirmMapClick()" />
+  <div class="btn-row">
+    <button class="btn btn-primary btn-sm" style="flex:1" onclick="confirmMapClick()">Add</button>
+    <button class="btn btn-ghost btn-sm" onclick="cancelMapClick()">✕</button>
+  </div>
+</div>
+    </div>`;
+  setTimeout(() => document.getElementById('pending-name')?.focus(), 50);
+}
+
+function confirmMapClick() {
+  const name = document.getElementById('pending-name')?.value?.trim();
+  if (!name || !state.pendingMapClick) return;
+  const p = {
+    id: `manual-${Date.now()}`,
+    name, description: '',
+    coordinates: [state.pendingMapClick.lng, state.pendingMapClick.lat, 0],
+    source: 'manual', restTime: 10,
+    category: detectCategory(name),
+  };
+  state.points.push(p);
+  state.restTimes[p.id] = 10;
+  state.pendingMapClick = null;
+  renderPendingClick();
+  renderAll();
+}
+
+function cancelMapClick() {
+  state.pendingMapClick = null;
+  renderPendingClick();
+}
+
+// ═══════════════════════════════════════════════════
+// RENDER
+// ═══════════════════════════════════════════════════
+
+function renderAll() {
+  renderPointsList();
+  renderHotelSelect();
+  renderFallbackWarning();
+  renderMap();
+  renderRouteCards();
+}
+
+function renderPointsList() {
+  const el = document.getElementById('points-list');
+  if (!state.points.length) {
+    el.innerHTML = '<p style="font-size:11px;color:#94a3b8;text-align:center;padding:8px 0;">No points added yet.</p>';
+    return;
+  }
+  el.innerHTML = state.points.map(p => `
+    <div class="point-item">
+      <span class="point-badge">${p.source || 'kml'}</span>
+      <div style="flex:1;min-width:0;">
+        <div class="point-name">${p.name}</div>
+        <div class="point-cat">${p.category || ''}</div>
+      </div>
+      <button class="btn btn-ghost btn-icon" onclick="removePoint('${p.id}')" style="color:#ef4444;" title="Remove">✕</button>
+    </div>`).join('');
+}
+
+function renderHotelSelect() {
+  const el = document.getElementById('hotel-select');
+  const cur = el.value;
+  el.innerHTML = '<option value="">Select your hotel or base…</option>' +
+    state.points.map(p => `<option value="${p.id}" ${p.id === cur ? 'selected' : ''}>${p.name}</option>`).join('');
+}
+
+function renderFallbackWarning() {
+  const el = document.getElementById('fallback-warning');
+  if (state.fallbackWarning) {
+    el.classList.remove('hidden');
+    el.innerHTML = `<strong>⚠️ Straight-line routes shown.</strong> ${state.fallbackWarning} — Real walking paths could not be fetched.`;
+  } else {
+    el.classList.add('hidden');
+  }
+}
+
+function renderRouteCards() {
+  const container = document.getElementById('route-cards-container');
+  if (!state.groups.length) {
+    container.innerHTML = '<div class="empty-panel"><span class="empty-text">Generate routes to see the summary here.</span></div>';
+    return;
+  }
+  const speed = parseFloat(document.getElementById('walking-speed').value) || 5;
+
+  container.innerHTML = `<div class="route-cards">${state.groups.map((group, gi) => {
+    const color = ROUTE_COLORS[gi % ROUTE_COLORS.length];
+    const walkMin = Math.round((group.walkingDistance / speed) * 60);
+    const totalMin = walkMin + group.restTime;
+    const hrs = Math.floor(totalMin / 60), mins = totalMin % 60;
+    const timeStr = hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
+    const waypoints = [state.hotelPoint, ...group.points, state.hotelPoint];
+
+    const stopsHtml = group.points.map((point, pi) => {
+      const segId = pi === 0
+        ? `${state.hotelPoint.id}_${point.id}`
+        : `${group.points[pi - 1].id}_${point.id}`;
+      const distKm = (group.segments[pi]?.distance ?? 0) / 1000;
+      const isTransport = !!state.transportSegments[segId];
+      const segMins = Math.round((distKm / speed) * 60);
+const segTimeStr = segMins >= 60 ? `${Math.floor(segMins/60)}h ${segMins%60}m` : `${segMins}m`;
+return `
+  <div class="leg ${isTransport ? 'transport' : ''}" onclick="toggleTransport(${gi},'${segId}')" title="Click to toggle walking/transport">
+    ↓ ${distKm.toFixed(2)} km ${isTransport ? '🚌' : '🚶'} <span style="margin-left:auto;color:#94a3b8;font-size:9px;">${segTimeStr}</span>
+  </div>
+        <div class="route-stop">
+          <div class="stop-number" style="background:${color}">${pi + 1}</div>
+          <div>
+            <div class="stop-name">${point.name}</div>
+            <div class="stop-meta">${point.category || 'Attraction'} · ${state.restTimes[point.id] ?? point.restTime ?? 5} min</div>
+          </div>
+        </div>`;
+    }).join('');
+
+    const lastSegDist = ((group.segments[group.segments.length - 1]?.distance ?? 0) / 1000).toFixed(2);
+    const lastSegId = group.points.length > 0 ? `${group.points[group.points.length - 1].id}_${state.hotelPoint.id}` : '';
+    const lastIsTransport = !!state.transportSegments[lastSegId];
+    const lastMins = Math.round((parseFloat(lastSegDist) / speed) * 60);
+    const lastTimeStr = lastMins >= 60 ? `${Math.floor(lastMins/60)}h ${lastMins%60}m` : `${lastMins}m`;
+
+    return `
+      <div class="route-card">
+        <div class="route-card-color-bar" style="background:${color}"></div>
+        <div class="route-card-header">
+          <div class="route-card-title" style="color:${color}">Route ${gi + 1}</div>
+          <div class="route-card-meta">${group.walkingDistance.toFixed(1)} km walking · ${timeStr} total</div>
+        </div>
+        <div class="route-card-body">
+          <div class="hotel-stop">🏨 ${state.hotelPoint.name}</div>
+          ${stopsHtml}
+          <div class="leg ${lastIsTransport ? 'transport' : ''}" onclick="toggleTransport(${gi},'${lastSegId}')" title="Click to toggle">
+            ↓ ${lastSegDist} km ${lastIsTransport ? '🚌' : '🚶'} <span style="margin-left:auto;color:#94a3b8;font-size:9px;">${lastTimeStr}</span>
+          </div>
+          <div class="hotel-stop">🏨 ${state.hotelPoint.name}</div>
+        </div>
+      </div>`;
+  }).join('')}</div>`;
+}
+
+// ═══════════════════════════════════════════════════
+// UI HELPERS
+// ═══════════════════════════════════════════════════
+
+function setGenLoading(on) {
+  const btn = document.getElementById('generate-btn');
+  btn.disabled = on;
+  btn.innerHTML = on ? '<div class="spinner"></div> Fetching routes…' : 'Generate Routes';
+}
+
+// ═══════════════════════════════════════════════════
+// DRAGGABLE DIVIDER
+// ═══════════════════════════════════════════════════
+
+function initDivider() {
+  const handle = document.getElementById('divider-handle');
+  const panel = document.getElementById('route-panel');
+  const content = document.querySelector('.content');
+  let dragging = false, startY = 0, startPanelH = 0;
+
+  handle.addEventListener('mousedown', e => {
+    dragging = true;
+    startY = e.clientY;
+    startPanelH = panel.offsetHeight;
+    handle.classList.add('dragging');
+    document.body.style.cursor = 'ns-resize';
+    document.body.style.userSelect = 'none';
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const delta = startY - e.clientY; // drag up = bigger panel
+    const contentH = content.offsetHeight;
+    const newH = Math.min(Math.max(startPanelH + delta, 80), contentH - 100);
+    panel.style.height = newH + 'px';
+    map && map.invalidateSize();
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    map && map.invalidateSize();
+  });
+}
+
+// ═══════════════════════════════════════════════════
+// SVG MAP FOR PDF
+// ═══════════════════════════════════════════════════
+
+function buildSVGMap() {
+  const allPoints = [state.hotelPoint, ...state.groups.flatMap(g => g.points)].filter(Boolean);
+  if (!allPoints.length) return '';
+
+  const W = 700, H = 320, PAD = 30;
+  const lats = allPoints.map(p => p.coordinates[1]);
+  const lngs = allPoints.map(p => p.coordinates[0]);
+  const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+  const latRange = maxLat - minLat || 0.01;
+  const lngRange = maxLng - minLng || 0.01;
+
+  const toX = lng => PAD + ((lng - minLng) / lngRange) * (W - PAD * 2);
+  const toY = lat => H - PAD - ((lat - minLat) / latRange) * (H - PAD * 2);
+
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" style="border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;margin-bottom:20px;">`;
+
+  // Draw route lines using segment geometry
+  state.groups.forEach((group, gi) => {
+    const color = ROUTE_COLORS[gi % ROUTE_COLORS.length];
+    group.segments.forEach(seg => {
+      const pts = seg.geometry.coordinates.map(([lng, lat]) => `${toX(lng).toFixed(1)},${toY(lat).toFixed(1)}`).join(' ');
+      if (pts) svg += `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2" stroke-opacity="0.8"/>`;
+    });
+  });
+
+  // Draw stop markers
+  state.groups.forEach((group, gi) => {
+    const color = ROUTE_COLORS[gi % ROUTE_COLORS.length];
+    group.points.forEach((p, pi) => {
+      const x = toX(p.coordinates[0]), y = toY(p.coordinates[1]);
+      svg += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="9" fill="${color}" stroke="white" stroke-width="1.5"/>`;
+      svg += `<text x="${x.toFixed(1)}" y="${(y + 3.5).toFixed(1)}" text-anchor="middle" font-size="8" font-weight="700" fill="white">${pi + 1}</text>`;
+    });
+  });
+
+  // Draw hotel marker
+  if (state.hotelPoint) {
+    const x = toX(state.hotelPoint.coordinates[0]), y = toY(state.hotelPoint.coordinates[1]);
+    svg += `<rect x="${(x-14).toFixed(1)}" y="${(y-10).toFixed(1)}" width="28" height="20" rx="4" fill="#1d4ed8" stroke="white" stroke-width="1.5"/>`;
+    svg += `<text x="${x.toFixed(1)}" y="${(y + 4).toFixed(1)}" text-anchor="middle" font-size="11">🏨</text>`;
+  }
+
+  svg += `<text x="${W - PAD}" y="${H - 8}" text-anchor="end" font-size="8" fill="#94a3b8">© OpenStreetMap contributors</text>`;
+  svg += '</svg>';
+  return svg;
+}
+
+function exportPDF() {
+  const title = document.getElementById('print-title');
+  const subtitle = document.getElementById('print-subtitle');
+  const svgContainer = document.getElementById('print-map-svg');
+
+  title.textContent = 'Route Optimizer — ' + (state.hotelPoint?.name || 'Trip Plan');
+  subtitle.textContent = `${state.groups.length} route${state.groups.length !== 1 ? 's' : ''} · Generated ${new Date().toLocaleDateString()}`;
+  svgContainer.innerHTML = buildSVGMap();
+
+  setTimeout(() => window.print(), 300);
+}
+
+function setGemLoading(on) {
+  const btn = document.getElementById('gemini-btn');
+  btn.disabled = on;
+  btn.innerHTML = on ? '<div class="spinner spinner-dark"></div> Asking Gemini…' : '✨ Smart Suggest';
+}
+
+function showToast(msg, type = 'info') {
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.style.background = type === 'success' ? '#10b981' : type === 'error' ? '#ef4444' : '#0f172a';
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+function toggleMobileSidebar() {
+  document.querySelector('.sidebar').classList.toggle('mobile-open');
+  map && map.invalidateSize();
+}
+
+// ═══════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════
+
+document.addEventListener('DOMContentLoaded', () => {
+  initMap();
+  initDivider();
+  renderAll();
+  if (!getKeys().ors) {
+    setTimeout(() => showToast('Click ⚙ API Keys to get started', 'info'), 800);
+  }
+});
+</script>
+</body>
+</html>
