@@ -492,6 +492,11 @@
       <input type="text" id="gemini-key-input" placeholder="Paste your Gemini key here…" />
       <p style="font-size:10px;color:#94a3b8;margin-top:3px;">Free key at aistudio.google.com/app/apikey</p>
     </div>
+    <div class="modal-field">
+      <label>Stadia Maps API Key</label>
+      <input type="text" id="stadia-key-input" placeholder="Paste your Stadia key here…" />
+      <p style="font-size:10px;color:#94a3b8;margin-top:3px;">Free key at stadiamaps.com → Account → API Keys</p>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-outline" onclick="closeSettings()">Cancel</button>
       <button class="btn btn-primary" onclick="saveSettings()">Save Keys</button>
@@ -529,12 +534,14 @@ const ROUTE_COLORS = [
 const getKeys = () => ({
   ors: localStorage.getItem('ors_api_key') || '',
   gemini: localStorage.getItem('gemini_api_key') || '',
+  stadia: localStorage.getItem('stadia_api_key') || '',
 });
 
 function openSettings() {
   const k = getKeys();
   document.getElementById('ors-key-input').value = k.ors;
   document.getElementById('gemini-key-input').value = k.gemini;
+  document.getElementById('stadia-key-input').value = k.stadia;
   document.getElementById('settings-modal').classList.remove('hidden');
 }
 function closeSettings() {
@@ -543,10 +550,13 @@ function closeSettings() {
 function saveSettings() {
   const ors = document.getElementById('ors-key-input').value.trim();
   const gem = document.getElementById('gemini-key-input').value.trim();
+  const stadia = document.getElementById('stadia-key-input').value.trim();
   if (ors) localStorage.setItem('ors_api_key', ors);
   if (gem) localStorage.setItem('gemini_api_key', gem);
+  if (stadia) localStorage.setItem('stadia_api_key', stadia);
   closeSettings();
   showToast('API keys saved ✓', 'success');
+  initMap();
 }
 
 // ═══════════════════════════════════════════════════
@@ -557,12 +567,40 @@ let map;
 let mapLayers = [];
 
 function initMap() {
+  // If map already exists, just swap the tile layer without destroying the map
+  if (map) {
+    map.eachLayer(layer => {
+      if (layer instanceof L.TileLayer) map.removeLayer(layer);
+    });
+    const stadiaKey = getKeys().stadia;
+    const tileUrl = stadiaKey
+      ? `https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png?api_key=${stadiaKey}`
+      : 'https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png';
+    L.tileLayer(tileUrl, {
+      maxZoom: 20,
+      subdomains: stadiaKey ? undefined : 'abc',
+      attribution: stadiaKey
+        ? '© <a href="https://stadiamaps.com/">Stadia Maps</a> © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        : '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    }).addTo(map);
+    renderMap();
+    return;
+  }
+
   map = L.map('map', { preferCanvas: true }).setView([35.68, 139.69], 12);
 
-  L.tileLayer('https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png', {
-  maxZoom: 20,
-  attribution: '© <a href="https://stadiamaps.com/">Stadia Maps</a> © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-}).addTo(map);
+  const stadiaKey = getKeys().stadia;
+  const tileUrl = stadiaKey
+    ? `https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png?api_key=${stadiaKey}`
+    : 'https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png';
+
+  L.tileLayer(tileUrl, {
+    maxZoom: 20,
+    subdomains: stadiaKey ? undefined : 'abc',
+    attribution: stadiaKey
+      ? '© <a href="https://stadiamaps.com/">Stadia Maps</a> © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      : '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+  }).addTo(map);
 
   map.on('click', e => {
     if (state.activeTab === 'manual') {
