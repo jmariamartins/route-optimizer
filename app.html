@@ -578,7 +578,7 @@ function initMap() {
     : '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
   L.tileLayer(tileUrl, {
     maxZoom: 20,
-    subdomains: mapTilerKey ? undefined : 'abc',
+    ...(mapTilerKey ? {} : { subdomains: 'abc' }),
     attribution: tileAttr,
   }).addTo(map);
 
@@ -599,10 +599,8 @@ function reloadTiles() {
     : 'https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png';
   L.tileLayer(tileUrl, {
     maxZoom: 20,
-    subdomains: mapTilerKey ? undefined : 'abc',
-    attribution: mapTilerKey
-      ? '© <a href="https://www.maptiler.com/">MapTiler</a> © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-      : '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    ...(mapTilerKey ? {} : { subdomains: 'abc' }),
+    attribution: tileAttr,
   }).addTo(map);
 }
 
