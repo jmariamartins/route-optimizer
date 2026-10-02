@@ -571,7 +571,7 @@ function initMap() {
 
   const mapTilerKey = getKeys().stadia;
   const tileUrl = mapTilerKey
-    ? `https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=${mapTilerKey}`
+    ? `https://api.maptiler.com/maps/basic-v2/{z}/{x}/{y}.png?key=${mapTilerKey}`
     : 'https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png';
   const tileAttr = mapTilerKey
     ? '© <a href="https://www.maptiler.com/">MapTiler</a> © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
