@@ -4,6 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Route Optimizer</title>
+  <!-- PWA -->
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Route Optimizer" />
+  <link rel="manifest" href="manifest.json" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
@@ -165,10 +172,10 @@
       display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px;
     }
     .stop-name { font-size: 11px; font-weight: 600; line-height: 1.3; }
-    .stop-meta { font-size: 10px; color: #94a3b8; }
+    .stop-meta { font-size: 10px; color: #64748b; }
     .leg {
       display: flex; align-items: center; gap: 4px;
-      padding: 2px 0 2px 24px; font-size: 10px; color: #94a3b8;
+      padding: 2px 0 2px 24px; font-size: 11px; color: #475569; font-weight: 500;
       cursor: pointer; border-radius: 3px;
     }
     .leg:hover { background: #f8fafc; }
@@ -1193,7 +1200,7 @@ function renderRouteCards() {
 const segTimeStr = segMins >= 60 ? `${Math.floor(segMins/60)}h ${segMins%60}m` : `${segMins}m`;
 return `
   <div class="leg ${isTransport ? 'transport' : ''}" onclick="toggleTransport(${gi},'${segId}')" title="Click to toggle walking/transport">
-    ↓ ${distKm.toFixed(2)} km ${isTransport ? '🚌' : '🚶'} <span style="margin-left:auto;color:#94a3b8;font-size:9px;">${segTimeStr}</span>
+    ↓ ${distKm.toFixed(2)} km ${isTransport ? '🚌' : '🚶'} <span style="margin-left:auto;color:#475569;font-size:10px;font-weight:500;">${segTimeStr}</span>
   </div>
         <div class="route-stop">
           <div class="stop-number" style="background:${color}">${pi + 1}</div>
@@ -1221,7 +1228,7 @@ return `
           <div class="hotel-stop">🏨 ${state.hotelPoint.name}</div>
           ${stopsHtml}
           <div class="leg ${lastIsTransport ? 'transport' : ''}" onclick="toggleTransport(${gi},'${lastSegId}')" title="Click to toggle">
-            ↓ ${lastSegDist} km ${lastIsTransport ? '🚌' : '🚶'} <span style="margin-left:auto;color:#94a3b8;font-size:9px;">${lastTimeStr}</span>
+            ↓ ${lastSegDist} km ${lastIsTransport ? '🚌' : '🚶'} <span style="margin-left:auto;color:#475569;font-size:10px;font-weight:500;">${lastTimeStr}</span>
           </div>
           <div class="hotel-stop">🏨 ${state.hotelPoint.name}</div>
         </div>
@@ -1371,6 +1378,10 @@ document.addEventListener('DOMContentLoaded', () => {
   renderAll();
   if (!getKeys().ors) {
     setTimeout(() => showToast('Click ⚙ API Keys to get started', 'info'), 800);
+  }
+  // Register service worker for PWA installability
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
   }
 });
 </script>
